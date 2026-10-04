@@ -26,7 +26,7 @@ select{flex:1;min-width:0;border:1px solid #ccc;background:#fff}
 </style>
 </head>
 <body><div id="app">
-<header><b>いつもの自転車ルート</b><span>試作版A</span></header>
+<header><b>いつもの自転車ルート</b><span>試作版A.1</span></header>
 <div id="map"></div>
 <div class="controls">
  <div class="row">
@@ -115,13 +115,14 @@ document.getElementById('del').onclick=()=>{
 };
 document.getElementById('loc').onclick=()=>{
  if(!navigator.geolocation)return alert('このブラウザでは位置情報を利用できません。');
- if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;return}
- watchId=navigator.geolocation.watchPosition(p=>{
+ if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
+ navigator.geolocation.getCurrentPosition(p=>{
   const ll=[p.coords.latitude,p.coords.longitude];
   if(!me) me=L.circleMarker(ll,{radius:9,weight:4,color:'#fff',fillColor:'#1677ff',fillOpacity:1}).addTo(map);
   else me.setLatLng(ll);
   map.setView(ll,Math.max(map.getZoom(),16));
- },()=>alert('位置情報を取得できませんでした。Safariで位置情報を許可してください。'),{enableHighAccuracy:true,maximumAge:2000});
+ },()=>alert('位置情報を取得できませんでした。Safariで位置情報を許可してください。'),
+ {enableHighAccuracy:true,maximumAge:2000,timeout:10000});
 };
 refresh();
 </script>
