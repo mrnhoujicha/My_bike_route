@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>いつもの自転車ルート</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+html,body,#app{height:100%;margin:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;background:#fff}
+#app{display:flex;flex-direction:column}
+header{padding:calc(env(safe-area-inset-top) + 8px) 14px 9px;background:#fff;border-bottom:1px solid #ddd;z-index:1000}
+header b{font-size:17px} header span{font-size:11px;color:#666;margin-left:8px}
+#map{flex:1;min-height:0}
+.controls{padding:10px 10px calc(env(safe-area-inset-bottom) + 9px);background:#fff;border-top:1px solid #ddd;z-index:1000}
+.row{display:flex;gap:8px;margin-bottom:8px}
+button,select{font:inherit;border:0;border-radius:12px;padding:11px 12px}
+button{background:#eee;font-weight:650}
+button.primary{background:#111;color:#fff;flex:1}
+button.on{background:#ffd65a;color:#111}
+select{flex:1;min-width:0;border:1px solid #ccc;background:#fff}
+.small{font-size:11px;color:#666;line-height:1.35}
+.leaflet-control-attribution{font-size:9px}
+</style>
+</head>
+<body><div id="app">
+<header><b>いつもの自転車ルート</b><span>試作版A</span></header>
+<div id="map"></div>
+<div class="controls">
+ <div class="row">
+  <button id="draw" class="primary">✏️ 指でなぞる</button>
+  <button id="undo">↩︎</button>
+  <button id="clear">消去</button>
+  <button id="loc">◎ 現在地</button>
+ </div>
+ <div class="row">
+  <select id="routes"><option value="">保存したルート</option></select>
+  <button id="save">保存</button>
+  <button id="del">削除</button>
+ </div>
+ <div class="small">黄色の「なぞり中」は地図が固定されます。指を離すと赤い線として残ります。保存データはこの端末のブラウザ内だけに保存します。</div>
+</div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map=L.map('map',{zoomControl:true}).setView([35.751,139.629],14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+ maxZoom:19, attribution:'&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+let drawing=false, enabled=false, latlngs=[], line=null, history=[], me=null, watchId=null;
+const drawBtn=document.getElementById('draw'), routes=document.getElementById('routes');
+
+function redraw(){
+ if(line) map.removeLayer(line);
+ line=latlngs.length ? L.polyline(latlngs,{color:'#e64646',weight:7,opacity:.9,lineCap:'round'}).addTo(map) : null;
+}
+function xyToLatLng(touch){
+ const r=map.getContainer().getBoundingClientRect();
+ return map.containerPointToLatLng(L.point(touch.clientX-r.left,touch.clientY-r.top));
+}
+function start(e){
+ if(!enabled)return;
+ e.preventDefault(); drawing=true; history.push(latlngs.slice());
+ const t=e.touches?e.touches[0]:e; latlngs.push(xyToLatLng(t)); redraw();
+}
+function move(e){
+ if(!drawing||!enabled)return;
+ e.preventDefault(); const t=e.touches?e.touches[0]:e;
+ const ll=xyToLatLng(t);
+ const last=latlngs[latlngs.length-1];
+ if(!last || map.distance(last,ll)>3){latlngs.push(ll);redraw()}
+}
+function end(e){if(drawing){e.preventDefault();drawing=false}}
+const mc=map.getContainer();
+mc.addEventListener('touchstart',start,{passive:false});
+mc.addEventListener('touchmove',move,{passive:false});
+mc.addEventListener('touchend',end,{passive:false});
+
+drawBtn.onclick=()=>{
+ enabled=!enabled;
+ if(enabled){map.dragging.disable();map.touchZoom.disable();map.doubleClickZoom.disable();drawBtn.classList.add('on');drawBtn.textContent='☝️ なぞり中'}
+ else{map.dragging.enable();map.touchZoom.enable();map.doubleClickZoom.enable();drawBtn.classList.remove('on');drawBtn.textContent='✏️ 指でなぞる'}
+};
+document.getElementById('undo').onclick=()=>{if(history.length){latlngs=history.pop();redraw()}};
+document.getElementById('clear').onclick=()=>{history.push(latlngs.slice());latlngs=[];redraw()};
+
+function getAll(){try{return JSON.parse(localStorage.getItem('itsumoBikeRoutes')||'{}')}catch{return {}}}
+function refresh(){
+ const a=getAll(); routes.innerHTML='<option value="">保存したルート</option>'+
+ Object.keys(a).sort().map(n=>'<option value="'+encodeURIComponent(n)+'">'+n.replace(/</g,'&lt;')+'</option>').join('');
+}
+document.getElementById('save').onclick=()=>{
+ if(latlngs.length<2)return alert('先に地図上を指でなぞってください。');
+ const name=prompt('ルート名を入力してください（例：光が丘）');
+ if(!name)return;
+ const a=getAll(); a[name]=latlngs.map(x=>[x.lat,x.lng]);
+ try{localStorage.setItem('itsumoBikeRoutes',JSON.stringify(a));refresh();routes.value=encodeURIComponent(name);alert('「'+name+'」を保存しました。')}
+ catch(e){alert('保存できませんでした。Safariの設定をご確認ください。')}
+};
+routes.onchange=()=>{
+ if(!routes.value)return;
+ const name=decodeURIComponent(routes.value), a=getAll();
+ latlngs=(a[name]||[]).map(x=>L.latLng(x[0],x[1])); history=[]; redraw();
+ if(line) map.fitBounds(line.getBounds(),{padding:[30,30]});
+};
+document.getElementById('del').onclick=()=>{
+ if(!routes.value)return alert('削除するルートを選んでください。');
+ const name=decodeURIComponent(routes.value);
+ if(!confirm('「'+name+'」を削除しますか？'))return;
+ const a=getAll(); delete a[name]; localStorage.setItem('itsumoBikeRoutes',JSON.stringify(a));
+ latlngs=[];redraw();refresh();
+};
+document.getElementById('loc').onclick=()=>{
+ if(!navigator.geolocation)return alert('このブラウザでは位置情報を利用できません。');
+ if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;return}
+ watchId=navigator.geolocation.watchPosition(p=>{
+  const ll=[p.coords.latitude,p.coords.longitude];
+  if(!me) me=L.circleMarker(ll,{radius:9,weight:4,color:'#fff',fillColor:'#1677ff',fillOpacity:1}).addTo(map);
+  else me.setLatLng(ll);
+  map.setView(ll,Math.max(map.getZoom(),16));
+ },()=>alert('位置情報を取得できませんでした。Safariで位置情報を許可してください。'),{enableHighAccuracy:true,maximumAge:2000});
+};
+refresh();
+</script>
+</body></html>
